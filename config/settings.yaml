@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------
+# Regime Trading Bot — configuration
+# Every tunable lives here; nothing is hard-coded in the modules.
+# ---------------------------------------------------------------
+
+mode: paper              # paper | live | dry_run  (dry_run = no broker, simulated fills)
+
+universe:
+  signal_symbol: SPY      # the instrument the HMM learns regimes from
+  risk_on: [SPY, QQQ]     # what we buy when the regime is favourable
+  defensive: [TLT, GLD]   # what we rotate into when it isn't
+  cash_proxy: SHY         # parking spot for "cash" (or leave weight unallocated)
+
+data:
+  source: yfinance        # yfinance | alpaca | synthetic
+  lookback_years: 10
+  interval: 1d
+  cache_dir: data_cache
+
+features:
+  return_window: 1        # log return horizon (days)
+  vol_window: 20          # realised volatility window
+  momentum_window: 60     # trend feature window
+  drawdown_window: 120    # rolling drawdown feature
+
+hmm:
+  n_states: 3             # bull / neutral / bear
+  covariance_type: full
+  n_iter: 500
+  n_restarts: 5           # fit several seeds, keep the best log-likelihood
+  min_train_days: 504     # ~2 years of daily bars before we trust a fit
+  confidence_threshold: 0.60   # below this posterior prob, treat regime as "uncertain"
+  random_state: 42
+
+allocation:
+  strategy: regime_weighted     # regime_weighted | binary | probability_blend
+  # target weights per labelled regime (must each sum to <= 1.0)
+  regime_weights:
+    bull:    {SPY: 0.60, QQQ: 0.40}
+    neutral: {SPY: 0.40, TLT: 0.30, GLD: 0.20}
+    bear:    {TLT: 0.50, GLD: 0.30, SHY: 0.20}
+  uncertain_scale: 0.5          # shrink risk-on exposure when confidence is low
+  rebalance_threshold: 0.05     # skip trades that move a weight by less than 5%
+
+backtest:
+  train_window_days: 756        # 3 years in-sample
+  test_window_days: 63          # 1 quarter out-of-sample, then roll forward
+  commission_bps: 1.0
+  slippage_bps: 2.0
+  initial_capital: 100000
+  benchmark: SPY
+
+risk:
+  max_position_weight: 0.60     # no single symbol above 60% of equity
+  max_gross_exposure: 1.00      # no leverage
+  max_daily_loss_pct: 0.03      # halt new risk for the day after -3%
+  max_drawdown_pct: 0.20        # kill switch: flatten + stop at -20% from peak
+  target_volatility: 0.15       # annualised vol target; scale exposure down if exceeded
+  vol_lookback: 20
+  min_order_value: 50           # ignore dust orders
+
+orchestrator:
+  run_time_local: "15:45"       # rebalance shortly before the US close (exchange time)
+  timezone: America/New_York
+  poll_seconds: 60
+  state_file: state/bot_state.json
+  log_file: logs/bot.log
+  trade_log: logs/trades.csv
